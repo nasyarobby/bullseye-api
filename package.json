@@ -1,0 +1,25 @@
+{
+  "name": "bullsocket.io",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/uuid": "^9.0.8",
+    "dotenv": "^16.4.5",
+    "nodemon": "^3.1.0",
+    "tap": "^18.7.0",
+    "typescript": "^5.3.3"
+  },
+  "scripts": {
+    "test": "yarn tap",
+    "dev": "yarn run nodemon --watch src -e ts,js,json,yml --ignore 'build/*' --exec 'yarn run start'",
+    "start": "yarn tsc && node -r dotenv/config dist/server.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.7",
+    "bull": "^4.12.2",
+    "fastify": "^4.26.1",
+    "ioredis": "^5.3.2",
+    "uuid": "^9.0.1"
+  }
+}

@@ -8,13 +8,14 @@ type RedisConfig = {
     password?: string
 }
 
-type QueueType = {
-    name: string,
-    key: string,
-    redis: RedisConfig
-}
-
 type RedisConnection = {
     id: string,
+    config: RedisConfig,
     redis: Ioredis,
+}
+
+type QueueType = {
+    id: string,
+    name: string,
+    connectionId: string,
 }

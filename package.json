@@ -5,7 +5,13 @@
   "license": "MIT",
   "devDependencies": {
     "@types/uuid": "^9.0.8",
+    "@typescript-eslint/eslint-plugin": "^7.1.0",
+    "@typescript-eslint/parser": "^7.1.0",
     "dotenv": "^16.4.5",
+    "eslint": "^8.57.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-config-airbnb-typescript": "^18.0.0",
+    "eslint-plugin-import": "^2.29.1",
     "nodemon": "^3.1.0",
     "tap": "^18.7.0",
     "typescript": "^5.3.3"
@@ -16,6 +22,7 @@
     "start": "yarn tsc && node -r dotenv/config dist/server.js"
   },
   "dependencies": {
+    "@fastify/env": "^4.3.0",
     "axios": "^1.6.7",
     "bull": "^4.12.2",
     "fastify": "^4.26.1",

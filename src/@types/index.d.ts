@@ -13,3 +13,10 @@ type QueueType = {
     name: string,
     connectionId: string,
 }
+
+type AppConfig = {
+    REDIS_DB: number,
+    REDIS_PASS: string,
+    REDIS_HOST: string,
+    REDIS_PORT:number
+}

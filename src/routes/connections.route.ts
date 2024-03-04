@@ -1,5 +1,4 @@
 import { FastifyInstance, FastifyRequest } from "fastify"
-import connections from "../data-providers/Connections"
 import Connections from "../data-providers/Connections"
 
 export default (app: FastifyInstance, config: any, done: Function) => {

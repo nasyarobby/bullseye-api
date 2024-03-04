@@ -1,17 +1,13 @@
 // this is file for default redis connection
-import { Redis } from "ioredis";
-const config = {
-    host: '10.244.65.16',
-    db: 0,
-    password: 'redisdev',
-    port: 6379,
-    keyPrefix: "banteng:"
-}
+import { Redis, RedisOptions } from "ioredis";
 
 class AppRedis {
     declare static instance: Redis
-    constructor() {
+    constructor(config?: RedisOptions) {
         if (!AppRedis.instance) {
+            if(!config) {
+                throw new Error("not initiated.")
+            }
             AppRedis.instance = new Redis(config);
         }
         return this;

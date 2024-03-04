@@ -7,18 +7,63 @@ export default (app: FastifyInstance, config: any, done: Function) => {
 
     queues.initAll();
 
-    app.get('/queues', async (req, res) => {
-        return { queues: queues.getAll() };
+    app.get('/queues', async (req: FastifyRequest<{
+        Querystring: {
+            stats: true
+        }
+    }>, res) => {
+        const q = queues.getAll();
+
+        if (req.query.stats) {
+            return {
+                queues: await Promise.all(q.map(async (qq) => {
+                    const [workers, jobCounts] = await Promise.all(
+                        [
+                            qq.queue.getWorkers(),
+                            qq.queue.getJobCounts()]);
+                    return {
+                        ...qq,
+                        stats: {
+                            jobCounts,
+                            workers: workers.map((e) => ({
+                                id: e.id,
+                                addr: e.addr,
+                                laddr: e.laddr,
+                            })),
+                        }
+                    }
+                }))
+            }
+        }
+        else {
+            return { queues: q }
+        }
     })
 
     app.post('/queues', async (req: FastifyRequest<{
         Body: {
             id: string,
-            name: string,
+            queueName: string,
             connectionId: string,
+            dataFields?: {
+                columnName: string
+                jsonPath: string
+            }[]
         }
     }>, res) => {
-        return queues.addQueue(req.body.id, req.body.name, req.body.connectionId)
+        return queues.addQueue(req.body.id, req.body.queueName, req.body.connectionId, req.body.dataFields)
+    })
+
+    app.put('/queue/:queueId',  async (req: FastifyRequest<{
+        Params: {
+            queueId: string
+        }
+    }>, res) => {
+        const queue = queues.findQueueById(req.params.queueId)
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
     })
 
     app.get('/queues/:queueId', async (req: FastifyRequest<{
@@ -26,32 +71,28 @@ export default (app: FastifyInstance, config: any, done: Function) => {
             queueId: string
         }
     }>, res) => {
-        const queue = queues.findQueueByName(req.params.queueId)
+        const queue = queues.findQueueById(req.params.queueId)
 
         if (!queue) {
             req.log.info({ queues })
-            throw new Error("Not found.")
+            throw new Error("Queue not found.")
         }
-        const workers = await queue.queue.getWorkers();
-        return {
-            workers,
-            queue: queue.queue,
-        }
+        return queue;
     })
 
     app.get(
-        "/queues/:queueName/stats",
+        "/queues/:queueId/stats",
         async (
             req: FastifyRequest<{
                 Params: {
-                    queueName: string;
+                    queueId: string;
                 };
             }>,
             res
         ) => {
-            let queueObj = queues.findQueueByName(req.params.queueName);
+            let queueObj = queues.findQueueById(req.params.queueId);
             if (!queueObj) {
-                throw new Error("Queue not opened.")
+                throw new Error("Queue not found.")
             }
 
             const workers = await queueObj.queue.getWorkers();
@@ -117,6 +158,7 @@ export default (app: FastifyInstance, config: any, done: Function) => {
             }
 
             return {
+                dataFields: queueObj.dataFields,
                 jobCounts,
                 jobs,
             }

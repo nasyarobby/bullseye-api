@@ -21,6 +21,7 @@ type QueueDataType = {
     friendlyName: string,
     queueName: string,
     connectionId: string
+    dataFields?: {columnName: string, jsonPath: string}[]
 }
 
 class Queues {
@@ -35,10 +36,8 @@ class Queues {
 
     async initAll() {
         const queueData = await this.redis.hgetall('queues');
-        console.log(queueData)
         return mapObject(queueData, async (obj: string, k) => {
             const config = JSON.parse(obj) as QueueDataType;
-            console.log({obj, k})
 
             const redisConnection = await new Connections().findById(config.connectionId);
 
@@ -51,6 +50,7 @@ class Queues {
                 connectionId: config.connectionId,
                 queueName: config.queueName,
                 friendlyName: config.friendlyName,
+                dataFields: config.dataFields,
                 queue: new Bull(config.queueName,
                     {
                         createClient: (type) => {
@@ -85,7 +85,8 @@ class Queues {
     async addQueue(
         friendlyName: string,
         queueName: string,
-        connectionId: string) {
+        connectionId: string,
+        dataFields?: {columnName: string, jsonPath: string}[]) {
 
         const redisConnection = await new Connections().findById(connectionId);
 
@@ -114,7 +115,8 @@ class Queues {
         const queueData: QueueDataType = {
             connectionId,
             friendlyName,
-            queueName
+            queueName,
+            dataFields,
         }
 
         const slug = slugify(friendlyName)
@@ -123,7 +125,9 @@ class Queues {
             id: slug,
             connectionId: connectionId,
             queueName: queueName,
-            friendlyName, queue: newQueue })
+            friendlyName, queue: newQueue,
+            dataFields,
+        })
 
         return slug;
     }

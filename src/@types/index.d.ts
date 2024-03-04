@@ -1,12 +1,6 @@
-import Ioredis from "ioredis"
+import Ioredis, { RedisOptions } from "ioredis"
 
-type RedisConfig = {
-    name: string,
-    host: string,
-    port: number,
-    db: number,
-    password?: string
-}
+type RedisConfig = RedisOptions & {name: string}
 
 type RedisConnection = {
     id: string,

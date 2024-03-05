@@ -12,7 +12,7 @@ class Connections {
     declare static instance: Connections
 
     constructor() {
-        if(Connections.instance) {
+        if (Connections.instance) {
             return Connections.instance
         }
 
@@ -32,7 +32,9 @@ class Connections {
                 Connections.data.push({
                     id,
                     config,
-                    redis: new Ioredis(config)
+                    redis: new Ioredis({ ...config, enableReadyCheck: false, maxRetriesPerRequest: null }),
+                    bclient: [],
+                    subscriber: new Ioredis({ ...config, enableReadyCheck: false, maxRetriesPerRequest: null }),
                 })
             })
         })
@@ -43,7 +45,7 @@ class Connections {
     }
 
     async addConnection(config: RedisConfig) {
-        const newRedis = new Ioredis({ ...config, lazyConnect: true });
+        const newRedis = new Ioredis({ ...config, lazyConnect: true, enableReadyCheck: false, maxRetriesPerRequest: null });
         const id = slugify(config.name)
 
         await newRedis.connect();
@@ -53,6 +55,8 @@ class Connections {
             id,
             config,
             redis: newRedis,
+            subscriber: newRedis.duplicate(),
+            bclient: []
         })
         return id;
     }

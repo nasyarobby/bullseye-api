@@ -4,8 +4,33 @@ import Queues from "../data-providers/Queues"
 
 export default (app: FastifyInstance, config: any, done: Function) => {
     const queues = new Queues()
-
     queues.initAll();
+
+    app.get('/ws/queues-stats', { websocket: true }, (conn, req) => {
+        req.log.info("Client connected.");
+        queues.getAll().forEach(queue => {
+            req.log.info("Set event listener for global:waiting " + queue.friendlyName)
+            req.log.info({ queue: queue.queue.client.options })
+            queue.queue.on("global:waiting", async (id) => {
+                const count = await queue.queue.getJobCounts();
+                conn.socket.send(JSON.stringify({
+                    id, 
+                    count, queueId: queue.id, queueName: queue.friendlyName,
+                    event: "waiting", type: "stats"
+                }))
+            })
+
+            queue.queue.on("global:completed", async (id) => {
+                const count = await queue.queue.getJobCounts();
+                conn.socket.send(JSON.stringify({
+                    id, 
+                    count, queueId: queue.id, queueName: queue.friendlyName,
+                    event: "completed", type: "stats"
+                }))
+            })
+        })
+
+    })
 
     app.get('/queues', async (req: FastifyRequest<{
         Querystring: {
@@ -17,19 +42,29 @@ export default (app: FastifyInstance, config: any, done: Function) => {
         if (req.query.stats) {
             return {
                 queues: await Promise.all(q.map(async (qq) => {
-                    const [workers, jobCounts] = await Promise.all(
-                        [
-                            qq.queue.getWorkers(),
-                            qq.queue.getJobCounts()]);
-                    return {
-                        ...qq,
-                        stats: {
-                            jobCounts,
-                            workers: workers.map((e) => ({
-                                id: e.id,
-                                addr: e.addr,
-                                laddr: e.laddr,
-                            })),
+                    try {
+                        if (qq.queue.client.status !== "ready") {
+                            throw new Error("Client is not ready")
+                        }
+                        const [workers, jobCounts] = await Promise.all(
+                            [
+                                qq.queue.getWorkers(),
+                                qq.queue.getJobCounts()]);
+                        return {
+                            ...qq,
+                            stats: {
+                                jobCounts,
+                                workers: workers.map((e) => ({
+                                    id: e.id,
+                                    addr: e.addr,
+                                    laddr: e.laddr,
+                                })),
+                            }
+                        }
+                    } catch (err) {
+                        return {
+                            ...qq,
+                            stats: {}
                         }
                     }
                 }))
@@ -54,7 +89,7 @@ export default (app: FastifyInstance, config: any, done: Function) => {
         return queues.addQueue(req.body.id, req.body.queueName, req.body.connectionId, req.body.dataFields)
     })
 
-    app.put('/queue/:queueId',  async (req: FastifyRequest<{
+    app.put('/queue/:queueId', async (req: FastifyRequest<{
         Params: {
             queueId: string
         }
@@ -64,6 +99,7 @@ export default (app: FastifyInstance, config: any, done: Function) => {
             req.log.info({ queues })
             throw new Error("Queue not found.")
         }
+        await queue.queue.close();
     })
 
     app.get('/queues/:queueId', async (req: FastifyRequest<{
@@ -142,10 +178,18 @@ export default (app: FastifyInstance, config: any, done: Function) => {
                 case "active":
                     jobCounts = await queueObj.queue.getActiveCount()
                     break;
+                case "delayed":
+                    jobCounts = await queueObj.queue.getDelayedCount()
+                    break;
+                case "waiting":
+                    jobCounts = await queueObj.queue.getWaitingCount()
+                    break;
                 case "failed":
                     jobCounts = await queueObj.queue.getFailedCount()
                     break;
-
+                case "paused":
+                    jobCounts = await queueObj.queue.getPausedCount()
+                    break;
             }
 
             if (jobCounts === null) {

@@ -8,7 +8,11 @@ class AppRedis {
             if(!config) {
                 throw new Error("not initiated.")
             }
-            AppRedis.instance = new Redis(config);
+            AppRedis.instance = new Redis({
+                ...config, 
+                enableReadyCheck: false, 
+                maxRetriesPerRequest: null
+            });
         }
         return this;
     }

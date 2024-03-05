@@ -6,6 +6,8 @@ type RedisConnection = {
     id: string,
     config: RedisConfig,
     redis: Ioredis,
+    subscriber: Ioredis,
+    bclient: Ioredis[],
 }
 
 type QueueType = {

@@ -21,7 +21,7 @@ type QueueDataType = {
     friendlyName: string,
     queueName: string,
     connectionId: string
-    dataFields?: {columnName: string, jsonPath: string}[]
+    dataFields?: { columnName: string, jsonPath: string }[]
 }
 
 class Queues {
@@ -54,12 +54,36 @@ class Queues {
                 queue: new Bull(config.queueName,
                     {
                         createClient: (type) => {
-                            if (type === "bclient") {
-                                const newRedisClient = redisConnection.redis.duplicate();
-                                return newRedisClient;
-                            }
-                            else {
-                                return redisConnection.redis;
+                            switch (type) {
+                                case 'client':
+                                    if (!redisConnection.redis) {
+                                        redisConnection.redis = new Redis({
+                                            ...redisConnection.config,
+                                            enableReadyCheck: false,
+                                            maxRetriesPerRequest: null
+                                        })
+                                    }
+                                    return redisConnection.redis;
+                                case 'subscriber':
+                                    if (!redisConnection.subscriber) {
+                                        redisConnection.subscriber = new Redis({
+                                            ...redisConnection.config,
+                                            enableReadyCheck: false,
+                                            maxRetriesPerRequest: null
+                                        })
+                                    }
+                                    return redisConnection.subscriber;
+                                case 'bclient':
+                                    const newRedis = new Redis({
+                                        ...redisConnection.config,
+                                        enableReadyCheck: false,
+                                        maxRetriesPerRequest: null
+                                    })
+
+                                    redisConnection.bclient.push(newRedis);
+                                    return newRedis;
+                                default:
+                                    throw new Error('Unexpected connection type: ' + type);
                             }
                         }
                     }
@@ -86,7 +110,7 @@ class Queues {
         friendlyName: string,
         queueName: string,
         connectionId: string,
-        dataFields?: {columnName: string, jsonPath: string}[]) {
+        dataFields?: { columnName: string, jsonPath: string }[]) {
 
         const redisConnection = await new Connections().findById(connectionId);
 
@@ -121,7 +145,7 @@ class Queues {
 
         const slug = slugify(friendlyName)
         await this.redis.hset('queues', slug, JSON.stringify(queueData))
-        Queues.data.push({ 
+        Queues.data.push({
             id: slug,
             connectionId: connectionId,
             queueName: queueName,
@@ -130,6 +154,10 @@ class Queues {
         })
 
         return slug;
+    }
+
+    async removeQueue() {
+
     }
 }
 

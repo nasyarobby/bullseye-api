@@ -3,12 +3,15 @@ import connectionsRoute from "./routes/connections.route";
 import queuesRoute from "./routes/queues.route";
 import fastifyEnv from "@fastify/env"
 import AppRedis from "./libs/getRedis";
+import fastifyWebsocket from "@fastify/websocket"
 
 const app = fastify({
   logger: {
     level: "trace",
   },
 });
+
+app.register(fastifyWebsocket);
 
 const schema = {
   type: 'object',

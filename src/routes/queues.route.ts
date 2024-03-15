@@ -14,7 +14,7 @@ export default (app: FastifyInstance, config: any, done: Function) => {
             queue.queue.on("global:waiting", async (id) => {
                 const count = await queue.queue.getJobCounts();
                 conn.socket.send(JSON.stringify({
-                    id, 
+                    id,
                     count, queueId: queue.id, queueName: queue.friendlyName,
                     event: "waiting", type: "stats"
                 }))
@@ -23,13 +23,65 @@ export default (app: FastifyInstance, config: any, done: Function) => {
             queue.queue.on("global:completed", async (id) => {
                 const count = await queue.queue.getJobCounts();
                 conn.socket.send(JSON.stringify({
-                    id, 
+                    id,
                     count, queueId: queue.id, queueName: queue.friendlyName,
                     event: "completed", type: "stats"
                 }))
             })
-        })
 
+        })
+    })
+
+    app.get('/ws/queues-stats/:name', { websocket: true }, async (conn, req: FastifyRequest<{
+        Params: {
+            name: string
+        }
+    }>) => {
+        req.log.info("Client connected.");
+        const queue = queues.findQueueById(req.params.name);
+
+
+        if (queue) {
+            const expiringListKey: string = "bull-workers:" + queue.queueName;
+
+            const workers = await queue.queue.client.zrange(expiringListKey, 0, -1);
+            const initialData = await Promise.all(workers.map(w => {
+                return {
+                    name: w,
+                    job: ""
+                }
+            }))
+            conn.socket.send(JSON.stringify({ type: "workers", data: { workers: initialData } }))
+            queue.queue.on("global:active", async (id) => {
+                const workers = await queue.queue.client.zrange(expiringListKey, 0, -1);
+                const data = await Promise.all(workers.map(w => {
+                    return queue.queue.client.get(expiringListKey + ':' + w).then(data => {
+                        return { name: w, job: data }
+                    })
+                }))
+                conn.socket.send(JSON.stringify({ type: "onActive", data: { id, workers: data } }))
+            })
+
+            queue.queue.on("global:completed", async (id, returnValue) => {
+                const workers = await queue.queue.client.zrange(expiringListKey, 0, -1);
+                const data = await Promise.all(workers.map(w => {
+                    return queue.queue.client.get(expiringListKey + ':' + w).then(data => {
+                        return { name: w, job: data }
+                    })
+                }))
+                conn.socket.send(JSON.stringify({ type: "onCompleted", data: { id, workers: data, returnValue } }))
+            })
+
+            queue.queue.on("global:failed", async (id) => {
+                const workers = await queue.queue.client.zrange(expiringListKey, 0, -1);
+                const data = await Promise.all(workers.map(w => {
+                    return queue.queue.client.get(expiringListKey + ':' + w).then(data => {
+                        return { name: w, job: data }
+                    })
+                }))
+                conn.socket.send(JSON.stringify({ type: "onFailed", data: { id, workers: data } }))
+            })
+        }
     })
 
     app.get('/queues', async (req: FastifyRequest<{
@@ -116,6 +168,45 @@ export default (app: FastifyInstance, config: any, done: Function) => {
         return queue;
     })
 
+    app.get('/queues/:queueId/jobs/:jobId', async (req: FastifyRequest<{
+        Params: {
+            queueId: string,
+            jobId: string
+        }
+    }>, res) => {
+        const queue = queues.findQueueById(req.params.queueId)
+
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
+
+        return queue.queue.getJob(req.params.jobId);
+    })
+
+    app.delete('/queues/:queueId/jobs/:jobId', async (req: FastifyRequest<{
+        Params: {
+            queueId: string,
+            jobId: string
+        }
+    }>, res) => {
+        const queue = queues.findQueueById(req.params.queueId)
+
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
+
+        const job = await queue.queue.getJob(req.params.jobId);
+
+        if (!job) {
+            throw new Error("Job not found")
+        }
+
+        await job.remove();
+        return { "ok": true }
+    })
+
     app.get(
         "/queues/:queueId/stats",
         async (
@@ -146,14 +237,14 @@ export default (app: FastifyInstance, config: any, done: Function) => {
     );
 
     app.get(
-        "/queues/:queueId/jobs/:status",
+        "/queues/:queueId/jobs",
         async (
             req: FastifyRequest<{
                 Params: {
                     queueId: string;
-                    status: JobStatus;
                 };
                 Querystring: {
+                    status?: JobStatus;
                     clear?: boolean;
                     page?: number,
                     limit?: number,
@@ -161,7 +252,7 @@ export default (app: FastifyInstance, config: any, done: Function) => {
             }>,
             res
         ) => {
-            const status = req.params.status;
+            const status = req.query.status || 'completed';
             const page = req.query.page || 1;
             const limit = req.query.limit || 10;
             req.log.info(req.params.queueId);
@@ -196,8 +287,8 @@ export default (app: FastifyInstance, config: any, done: Function) => {
                 return new Error("Unknown status")
             }
 
-            const jobs = await queueObj.queue.getJobs([req.params.status], (page - 1) * limit, (page * limit) - 1);
-            if (req.query.clear && req.params.status === "completed") {
+            const jobs = await queueObj.queue.getJobs([status], (page - 1) * limit, (page * limit) - 1);
+            if (req.query.clear && status === "completed") {
                 await Promise.all(jobs.map((j) => j.remove()));
             }
 

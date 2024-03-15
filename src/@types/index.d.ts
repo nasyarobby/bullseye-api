@@ -1,6 +1,6 @@
 import Ioredis, { RedisOptions } from "ioredis"
 
-type RedisConfig = RedisOptions & {name: string}
+type RedisConfig = RedisOptions & { name: string }
 
 type RedisConnection = {
     id: string,
@@ -20,5 +20,6 @@ type AppConfig = {
     REDIS_DB: number,
     REDIS_PASS: string,
     REDIS_HOST: string,
-    REDIS_PORT:number
+    REDIS_PORT: number,
+    PORT: number
 }

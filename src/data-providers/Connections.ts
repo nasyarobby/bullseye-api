@@ -5,6 +5,7 @@ import mapObject from "../libs/mapObject";
 import { RedisConfig, RedisConnection } from "../@types";
 import slugify from "slugify";
 import AppRedis from "../libs/getRedis";
+import { disconnect } from "process";
 
 class Connections {
     declare static data: RedisConnection[];
@@ -48,7 +49,12 @@ class Connections {
         const newRedis = new Ioredis({ ...config, lazyConnect: true, enableReadyCheck: false, maxRetriesPerRequest: null });
         const id = slugify(config.name)
 
-        await newRedis.connect();
+        try{
+            await newRedis.connect();
+        }
+        catch(err) {
+            
+        }
         await this.redis.hset("redis-configs", id, JSON.stringify(config));
 
         Connections.data.push({
@@ -63,6 +69,43 @@ class Connections {
 
     async findById(id: string) {
         return Connections.data.find(conn => conn.id === id)
+    }
+
+    async updateConnection(id: string, config: RedisConfig) {
+        this.disconnect(id);
+        this.removeConnection(id);
+        return this.addConnection(config)
+    }
+
+    async removeConnection(id: string) {
+        Connections.data = Connections.data.filter(conn => conn.id !== id);
+        await this.redis.hdel("redis-configs", id);
+        return id;
+    }
+
+    async disconnect(id: string) {
+        const conn = await this.findById(id);
+        if (conn) {
+            conn.redis.disconnect();
+            conn.subscriber.disconnect();
+            conn.bclient.forEach((conn) => {
+                conn.disconnect();
+            })
+            conn.bclient = [];
+            return id;
+        }
+
+        return null;
+    }
+
+    async connect(id: string) {
+        const conn = await this.findById(id);
+        if (conn) {
+            conn.redis.connect();
+            conn.subscriber.connect();
+            return id;
+        }
+        return null;
     }
 }
 

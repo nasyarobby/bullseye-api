@@ -4,6 +4,7 @@ import queuesRoute from "./routes/queues.route";
 import fastifyEnv from "@fastify/env"
 import AppRedis from "./libs/getRedis";
 import fastifyWebsocket from "@fastify/websocket"
+import pm2Route from "./routes/pm2.route";
 
 const app = fastify({
   logger: {
@@ -17,6 +18,10 @@ const schema = {
   type: 'object',
   required: [],
   properties: {
+    PORT: {
+      type: 'number',
+      default: 3000
+    },
     REDIS_HOST: {
       type: 'string',
       default: 'localhost'
@@ -55,11 +60,12 @@ const options = {
 
   await app.register(connectionsRoute)
   await app.register(queuesRoute)
+  await app.register(pm2Route)
   app.ready().then(() =>
     app.listen(
       {
         host: "0.0.0.0",
-        port: 3000,
+        port: app.config.PORT,
       },
       (err, address) => {
         if (err) {

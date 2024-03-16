@@ -28,7 +28,6 @@ export default (app: FastifyInstance, config: any, done: Function) => {
                     event: "completed", type: "stats"
                 }))
             })
-
         })
     })
 
@@ -129,7 +128,7 @@ export default (app: FastifyInstance, config: any, done: Function) => {
 
     app.post('/queues', async (req: FastifyRequest<{
         Body: {
-            id: string,
+            friendlyName: string,
             queueName: string,
             connectionId: string,
             dataFields?: {
@@ -138,28 +137,37 @@ export default (app: FastifyInstance, config: any, done: Function) => {
             }[]
         }
     }>, res) => {
-        return queues.addQueue(req.body.id, req.body.queueName, req.body.connectionId, req.body.dataFields)
+        return queues.addQueue(req.body.friendlyName, req.body.queueName, req.body.connectionId, req.body.dataFields)
     })
 
-    app.put('/queue/:queueId', async (req: FastifyRequest<{
+    app.post('/queues/:slug', async (req: FastifyRequest<{
         Params: {
-            queueId: string
+            slug: string
+        }
+        Body: {
+            friendlyName: string,
+            queueName: string,
+            connectionId: string,
+            dataFields?: {
+                columnName: string
+                jsonPath: string
+            }[]
         }
     }>, res) => {
-        const queue = queues.findQueueById(req.params.queueId)
+        const queue = queues.findQueueBySlug(req.params.slug)
         if (!queue) {
             req.log.info({ queues })
             throw new Error("Queue not found.")
         }
-        await queue.queue.close();
+        await queues.updateQueueById(req.params.slug, req.body);
     })
 
-    app.get('/queues/:queueId', async (req: FastifyRequest<{
+    app.get('/queues/:slug', async (req: FastifyRequest<{
         Params: {
-            queueId: string
+            slug: string
         }
     }>, res) => {
-        const queue = queues.findQueueById(req.params.queueId)
+        const queue = queues.findQueueBySlug(req.params.slug)
 
         if (!queue) {
             req.log.info({ queues })
@@ -168,13 +176,13 @@ export default (app: FastifyInstance, config: any, done: Function) => {
         return queue;
     })
 
-    app.get('/queues/:queueId/jobs/:jobId', async (req: FastifyRequest<{
+    app.get('/queues/:slug/jobs/:jobId', async (req: FastifyRequest<{
         Params: {
-            queueId: string,
+            slug: string,
             jobId: string
         }
     }>, res) => {
-        const queue = queues.findQueueById(req.params.queueId)
+        const queue = queues.findQueueBySlug(req.params.slug)
 
         if (!queue) {
             req.log.info({ queues })
@@ -184,13 +192,13 @@ export default (app: FastifyInstance, config: any, done: Function) => {
         return queue.queue.getJob(req.params.jobId);
     })
 
-    app.delete('/queues/:queueId/jobs/:jobId', async (req: FastifyRequest<{
+    app.delete('/queues/:slug/jobs/:jobId', async (req: FastifyRequest<{
         Params: {
-            queueId: string,
+            slug: string,
             jobId: string
         }
     }>, res) => {
-        const queue = queues.findQueueById(req.params.queueId)
+        const queue = queues.findQueueBySlug(req.params.slug)
 
         if (!queue) {
             req.log.info({ queues })
@@ -207,8 +215,7 @@ export default (app: FastifyInstance, config: any, done: Function) => {
         return { "ok": true }
     })
 
-    app.get(
-        "/queues/:queueId/stats",
+    app.get("/queues/:queueId/stats",
         async (
             req: FastifyRequest<{
                 Params: {
@@ -236,12 +243,11 @@ export default (app: FastifyInstance, config: any, done: Function) => {
         }
     );
 
-    app.get(
-        "/queues/:queueId/jobs",
+    app.get("/queues/:slug/jobs",
         async (
             req: FastifyRequest<{
                 Params: {
-                    queueId: string;
+                    slug: string;
                 };
                 Querystring: {
                     status?: JobStatus;
@@ -255,8 +261,8 @@ export default (app: FastifyInstance, config: any, done: Function) => {
             const status = req.query.status || 'completed';
             const page = req.query.page || 1;
             const limit = req.query.limit || 10;
-            req.log.info(req.params.queueId);
-            let queueObj = queues.findQueueById(req.params.queueId);
+            req.log.info(req.params.slug);
+            let queueObj = queues.findQueueBySlug(req.params.slug);
             if (!queueObj) {
                 req.log.info({ queues })
                 throw new Error("Queue not opened.")

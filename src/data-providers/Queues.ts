@@ -4,6 +4,7 @@ import mapObject from "../libs/mapObject";
 import Connections from "./Connections";
 import getRedis from "../libs/getRedis";
 import slugify from "slugify";
+import { v4 as uuid } from "uuid";
 
 class RedisConnectionNotFound extends Error {
     constructor() {
@@ -18,6 +19,8 @@ class QueueFriendlyNameExists extends Error {
 }
 
 type QueueDataType = {
+    id: string,
+    slug: string,
     friendlyName: string,
     queueName: string,
     connectionId: string
@@ -45,8 +48,9 @@ class Queues {
                 throw new RedisConnectionNotFound();
             }
 
-            const data: (QueueDataType & { id: string, queue: QueueType }) = {
+            const data: (QueueDataType & { queue: QueueType }) = {
                 id: k,
+                slug: config.slug,
                 connectionId: config.connectionId,
                 queueName: config.queueName,
                 friendlyName: config.friendlyName,
@@ -106,6 +110,10 @@ class Queues {
         return Queues.data.find(q => q.id === id);
     }
 
+    findQueueBySlug(slug: string) {
+        return Queues.data.find(q => q.slug === slug);
+    }
+
     async addQueue(
         friendlyName: string,
         queueName: string,
@@ -135,29 +143,57 @@ class Queues {
                 }
             }
         });
+        const id = uuid();
+        const slug = slugify(friendlyName)
 
         const queueData: QueueDataType = {
+            id,
+            slug,
             connectionId,
             friendlyName,
             queueName,
             dataFields,
         }
 
-        const slug = slugify(friendlyName)
-        await this.redis.hset('queues', slug, JSON.stringify(queueData))
+        await this.redis.hset('queues', id, JSON.stringify(queueData))
         Queues.data.push({
-            id: slug,
+            id,
+            slug,
             connectionId: connectionId,
             queueName: queueName,
-            friendlyName, queue: newQueue,
+            friendlyName, 
+            queue: newQueue,
             dataFields,
         })
 
         return slug;
     }
 
-    async removeQueue() {
+    async removeQueueById(id: string) {
+        const queue = this.findQueueById(id)
 
+        if (!queue) throw new Error("Queue not found.");
+
+        await queue.queue.close();
+
+        await this.redis.hdel('queues', id);
+
+        Queues.data = Queues.data.filter(q => q.id !== id);
+
+        return id;
+    }
+
+    async updateQueueById(id: string, updatedData: {
+        friendlyName: string,
+        queueName: string,
+        connectionId: string,
+        dataFields?: { columnName: string, jsonPath: string }[]
+    }) {
+        const redisConnection = await new Connections().findById(id);
+
+        if (!redisConnection) {
+            throw new RedisConnectionNotFound();
+        }
     }
 }
 

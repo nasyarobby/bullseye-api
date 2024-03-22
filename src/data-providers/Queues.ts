@@ -45,7 +45,8 @@ class Queues {
             const redisConnection = await new Connections().findById(config.connectionId);
 
             if (!redisConnection) {
-                throw new RedisConnectionNotFound();
+                // throw new RedisConnectionNotFound();
+                return;
             }
 
             const data: (QueueDataType & { queue: QueueType }) = {
@@ -169,18 +170,18 @@ class Queues {
         return slug;
     }
 
-    async removeQueueById(id: string) {
-        const queue = this.findQueueById(id)
+    async removeQueueBySlug(slug: string) {
+        const queue = this.findQueueBySlug(slug)
 
         if (!queue) throw new Error("Queue not found.");
 
         await queue.queue.close();
 
-        await this.redis.hdel('queues', id);
+        await this.redis.hdel('queues', queue.id);
 
-        Queues.data = Queues.data.filter(q => q.id !== id);
+        Queues.data = Queues.data.filter(q => q.id !== queue.id);
 
-        return id;
+        return queue.id;
     }
 
     async updateQueueById(id: string, updatedData: {

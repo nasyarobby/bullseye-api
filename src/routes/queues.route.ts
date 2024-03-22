@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest } from "fastify"
-import { JobStatus } from "bull"
+import { Job, JobOptions, JobStatus, JobStatusClean } from "bull"
 import Queues from "../data-providers/Queues"
 
 export default (app: FastifyInstance, config: any, done: Function) => {
@@ -9,7 +9,10 @@ export default (app: FastifyInstance, config: any, done: Function) => {
     app.get('/ws/queues-stats', { websocket: true }, (conn, req) => {
         req.log.info("Client connected.");
         queues.getAll().forEach(queue => {
-            req.log.info("Set event listener for global:waiting " + queue.friendlyName)
+            if (queue.queue.client.status !== 'ready') {
+                return undefined;
+            }
+            req.log.info("Set event listener for global:waiting. Queue: " + queue.friendlyName)
             req.log.info({ queue: queue.queue.client.options })
             queue.queue.on("global:waiting", async (id) => {
                 const count = await queue.queue.getJobCounts();
@@ -17,6 +20,15 @@ export default (app: FastifyInstance, config: any, done: Function) => {
                     id,
                     count, queueId: queue.id, queueName: queue.friendlyName,
                     event: "waiting", type: "stats"
+                }))
+            })
+
+            queue.queue.on("global:active", async (id) => {
+                const count = await queue.queue.getJobCounts();
+                conn.socket.send(JSON.stringify({
+                    id,
+                    count, queueId: queue.id, queueName: queue.friendlyName,
+                    event: "active", type: "stats"
                 }))
             })
 
@@ -37,7 +49,7 @@ export default (app: FastifyInstance, config: any, done: Function) => {
         }
     }>) => {
         req.log.info("Client connected.");
-        const queue = queues.findQueueById(req.params.name);
+        const queue = queues.findQueueBySlug(req.params.name);
 
 
         if (queue) {
@@ -100,7 +112,9 @@ export default (app: FastifyInstance, config: any, done: Function) => {
                         const [workers, jobCounts] = await Promise.all(
                             [
                                 qq.queue.getWorkers(),
-                                qq.queue.getJobCounts()]);
+                                qq.queue.getJobCounts()
+                            ]
+                        );
                         return {
                             ...qq,
                             stats: {
@@ -160,6 +174,210 @@ export default (app: FastifyInstance, config: any, done: Function) => {
             throw new Error("Queue not found.")
         }
         await queues.updateQueueById(req.params.slug, req.body);
+    })
+
+    app.delete('/queues/:slug', async (req: FastifyRequest<{
+        Params: {
+            slug: string
+        }
+    }>, res) => {
+        const queue = queues.findQueueBySlug(req.params.slug)
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
+        await queues.removeQueueBySlug(req.params.slug);
+        return {
+            queue
+        }
+    })
+
+    app.post('/queues/:slug/resume', async (req: FastifyRequest<{
+        Params: {
+            slug: string
+        }
+        Body: {
+            friendlyName: string,
+            queueName: string,
+            connectionId: string,
+            dataFields?: {
+                columnName: string
+                jsonPath: string
+            }[]
+        }
+    }>, res) => {
+        const queue = queues.findQueueBySlug(req.params.slug)
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
+        await queue.queue.resume();
+        return {
+            id: queue.id,
+            slug: queue.slug,
+            isPaused: false
+        };
+    })
+
+    app.post('/queues/:slug/pause', async (req: FastifyRequest<{
+        Params: {
+            slug: string
+        }
+        Body: {
+            friendlyName: string,
+            queueName: string,
+            connectionId: string,
+            dataFields?: {
+                columnName: string
+                jsonPath: string
+            }[]
+        }
+    }>, res) => {
+        const queue = queues.findQueueBySlug(req.params.slug)
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
+        await queue.queue.pause();
+        return {
+            id: queue.id,
+            slug: queue.slug,
+            isPaused: true
+        };
+    })
+
+    app.post('/queues/:slug/empty', async (req: FastifyRequest<{
+        Params: {
+            slug: string
+        }
+    }>, res) => {
+        const queue = queues.findQueueBySlug(req.params.slug)
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
+        await queue.queue.empty();
+        return {
+            id: queue.id,
+            slug: queue.slug,
+            emptied: true
+        };
+    })
+
+    app.post('/queues/:slug/clean', async (req: FastifyRequest<{
+        Params: {
+            slug: string
+        }
+        Body: {
+            status: string,
+            graceMs: number,
+        }
+    }>, res) => {
+        const queue = queues.findQueueBySlug(req.params.slug)
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
+        await queue.queue.clean(req.body.graceMs || 0, (req.body.status || 'completed') as JobStatusClean);
+        return {
+            id: queue.id,
+            slug: queue.slug,
+            cleaned: true
+        };
+    })
+
+    app.post('/queues/:slug/remove-jobs', async (req: FastifyRequest<{
+        Params: {
+            slug: string
+        }
+        Body: {
+            pattern: string,
+        }
+    }>, res) => {
+        const queue = queues.findQueueBySlug(req.params.slug)
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
+        req.log.info({ pattern: req.body.pattern }, "Removing job by pattern")
+        await queue.queue.removeJobs(req.body.pattern);
+        return {
+            id: queue.id,
+            slug: queue.slug,
+            obliterated: true
+        };
+    })
+
+    app.post('/queues/:slug/obliterate', async (req: FastifyRequest<{
+        Params: {
+            slug: string
+        }
+        Body: {
+            force: boolean,
+        }
+    }>, res) => {
+        const queue = queues.findQueueBySlug(req.params.slug)
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
+        await queue.queue.obliterate({ force: req.body?.force || false });
+        return {
+            id: queue.id,
+            slug: queue.slug,
+            obliterated: true
+        };
+    })
+
+    app.get('/queues/:slug/is-paused', async (req: FastifyRequest<{
+        Params: {
+            slug: string
+        }
+        Body: {
+            friendlyName: string,
+            queueName: string,
+            connectionId: string,
+            dataFields?: {
+                columnName: string
+                jsonPath: string
+            }[]
+        }
+    }>, res) => {
+        const queue = queues.findQueueBySlug(req.params.slug)
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
+        const isPaused = await queue.queue.isPaused();
+        return {
+            id: queue.id,
+            slug: queue.slug,
+            isPaused
+        };
+    })
+
+    app.post('/queues/:slug/create-job', async (req: FastifyRequest<{
+        Params: {
+            slug: string
+        }
+        Body: {
+            data: object,
+            opts?: JobOptions
+        }
+    }>, res) => {
+        const queue = queues.findQueueBySlug(req.params.slug)
+        if (!queue) {
+            req.log.info({ queues })
+            throw new Error("Queue not found.")
+        }
+        const job = await queue.queue.add(req.body.data, req.body.opts);
+        return {
+            id: queue.id,
+            slug: queue.slug,
+            job: {
+                id: job.id
+            }
+        };
     })
 
     app.get('/queues/:slug', async (req: FastifyRequest<{

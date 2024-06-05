@@ -51,6 +51,10 @@ export default (app: FastifyInstance, config: any, done: Function) => {
         req.log.info("Client connected.");
         const queue = queues.findQueueBySlug(req.params.name);
 
+        conn.on("close", () => {
+            req.log.info("Client disconnected.");
+        })
+
 
         if (queue) {
             const expiringListKey: string = "bull-workers:" + queue.queueName;
@@ -71,6 +75,17 @@ export default (app: FastifyInstance, config: any, done: Function) => {
                     })
                 }))
                 conn.socket.send(JSON.stringify({ type: "onActive", data: { id, workers: data } }))
+            })
+
+            queue.queue.on("global:progress", async (id, progress) => {
+                const workers = await queue.queue.client.zrange(expiringListKey, 0, -1);
+                const data = await Promise.all(workers.map(w => {
+                    return queue.queue.client.get(expiringListKey + ':' + w)
+                        .then(data => {
+                            return { name: w, job: data, progress: data === id ? progress : null }
+                        })
+                }))
+                conn.socket.send(JSON.stringify({ type: "onProgress", data: { id, workers: data } }))
             })
 
             queue.queue.on("global:completed", async (id, returnValue) => {
